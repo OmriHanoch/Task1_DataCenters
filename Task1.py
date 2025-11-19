@@ -108,10 +108,11 @@ def model_link_failures(G, failure_rate_percent):
 
 # --- Analysis Functions ---
 
-def calculate_avg_path_length(G, host_pairs):
+def calculate_avg_path_length(G, host_pairs, penalty=10):
     """
     Calculates the average path length and reachability for the current graph G
     using a fixed list of host_pairs.
+    Disconnected pairs are penalized with the specified penalty (default 10 hops).
     """
     total_path_length = 0
     connected_pairs_count = 0
@@ -126,17 +127,15 @@ def calculate_avg_path_length(G, host_pairs):
             total_path_length += length
             connected_pairs_count += 1
         except nx.NetworkXNoPath:
-            pass
+            # Penalize disconnection
+            total_path_length += penalty
 
-    if connected_pairs_count == 0:
-        return 0.0, 0.0
-    
-    avg_length = total_path_length / connected_pairs_count
+    avg_length = total_path_length / num_pairs_checked
     reachability = (connected_pairs_count / num_pairs_checked) * 100.0
     
     return avg_length, reachability
 
-def run_experiment_cycle(k, fail_rates, N_RUNS=100, N_SAMPLES=500):
+def run_experiment_cycle(k, fail_rates, penalty=10, N_RUNS=100, N_SAMPLES=500):
     """
     Runs the full statistical experiment for various failure rates.
     """
@@ -174,7 +173,7 @@ def run_experiment_cycle(k, fail_rates, N_RUNS=100, N_SAMPLES=500):
             model_link_failures(G, rate)
             
             # 3. Analyze the failed graph using the FIXED host pairs list
-            length, reachability = calculate_avg_path_length(G, fixed_host_pairs)
+            length, reachability = calculate_avg_path_length(G, fixed_host_pairs, penalty=penalty)
             
             avg_length_sum += length
             reachability_sum += reachability
@@ -191,7 +190,7 @@ def run_experiment_cycle(k, fail_rates, N_RUNS=100, N_SAMPLES=500):
         
     return results
 
-def draw_fat_tree(G, k, failed_edges=None):
+def draw_fat_tree(G, k, failed_edges=None, fail_rate_pct=0.0):
     """Draws the Fat-tree graph with a custom hierarchical layout."""
     
     plt.figure(figsize=(12, 8)) 
@@ -245,33 +244,47 @@ def draw_fat_tree(G, k, failed_edges=None):
         nx.draw_networkx_edges(G, pos, edgelist=failed_edges, edge_color='red', width=2.0, style='dashed')
     nx.draw_networkx_labels(G, pos, font_size=7, font_weight='bold')
 
-    plt.title(f"Fat-Tree Topology (k={k}) - FAIL RATE: {len(failed_edges)} links removed")
+    num_failed = len(failed_edges) if failed_edges else 0
+    plt.title(f"Fat-Tree Topology (k={k}) - Failure Rate: {fail_rate_pct}% ({num_failed} links removed)", fontsize=12, fontweight='bold')
     plt.show()
 
 
 def visualize_results(results):
     """
-    Creates a single plot showing only Reachability (%).
+    Creates a dual-axis plot showing Reachability (%) and Average Path Length (hops).
+    Includes penalty parameter and experiment details in the plot title.
     """
     
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+    fig, ax1 = plt.subplots(figsize=(12, 6))
     
-    # Plot 1: Reachability (The ONLY focus)
-    color = 'tab:red'
-    ax1.set_xlabel('Link Failure Probability (%)')
-    ax1.set_ylabel('Reachability (%)', color=color)
-    
-    # Ensure Y-axis starts at 0%
+    # Plot 1: Reachability on left Y-axis (red)
+    color1 = 'tab:red'
+    ax1.set_xlabel('Link Failure Probability (%)', fontsize=12)
+    ax1.set_ylabel('Reachability (%)', color=color1, fontsize=12)
     ax1.set_ylim(0, 105) 
     
-    ax1.plot(results['fail_rate'], results['reachability'], color=color, marker='x', linestyle='--', label='Reachability (%)')
-    ax1.tick_params(axis='y', labelcolor=color)
+    line1 = ax1.plot(results['fail_rate'], results['reachability'], color=color1, marker='o', linestyle='-', linewidth=2, label='Reachability (%)')
+    ax1.tick_params(axis='y', labelcolor=color1)
+    ax1.grid(True, alpha=0.3)
 
-    fig.tight_layout()  
-    plt.title(f'Fat-Tree Robustness Analysis: Reachability (K={results["params"]["k"]})')
-    plt.grid(True)
-    ax1.legend(loc='upper right')
+    # Plot 2: Average Path Length on right Y-axis (blue)
+    ax2 = ax1.twinx()
+    color2 = 'tab:blue'
+    ax2.set_ylabel('Average Path Length (hops)', color=color2, fontsize=12)
     
+    line2 = ax2.plot(results['fail_rate'], results['avg_path'], color=color2, marker='s', linestyle='--', linewidth=2, label='Avg Path Length (hops)')
+    ax2.tick_params(axis='y', labelcolor=color2)
+    
+    # Combined legend
+    lines = line1 + line2
+    labels = [l.get_label() for l in lines]
+    ax1.legend(lines, labels, loc='center right', fontsize=10)
+
+    # Enhanced title with experiment parameters
+    penalty_str = f", Penalty: {results.get('penalty', 'N/A')} hops" if 'penalty' in results else ""
+    title = f"Fat-Tree Robustness Analysis\nK={results['params']['k']}, N_RUNS={results.get('n_runs', '?')}, N_SAMPLES={results.get('n_samples', '?')}{penalty_str}"
+    plt.title(title, fontsize=12, fontweight='bold')
+    fig.tight_layout()  
     plt.show()
 
 # --- Main Execution Block for Analysis ---
@@ -282,7 +295,8 @@ def main():
     parser.add_argument('--K-VALUE', type=int, default=8, help="The constant K value for the experiment.")
     parser.add_argument('--N-RUNS', type=int, default=100, help="Number of statistical runs for each data point.")
     parser.add_argument('--N-SAMPLES', type=int, default=500, help="Number of random host pairs to sample when K > 4.")
-    parser.add_argument('--FAIL-RATE', type=float, default=0.0, help="The percentage of total links to randomly fail (0.0 to 100.0). Default is 0%.")
+    parser.add_argument('--FAIL-RATE', type=float, default=0.0, help="The percentage of total links to randomly fail (0.0 to 100.0). Default is 0 percent.")
+    parser.add_argument('--PENALTY', type=int, default=10, help="Penalty in hops for disconnected host pairs (default 10).")
 
     args = parser.parse_args()
 
@@ -300,7 +314,7 @@ def main():
     print(f"Links Failed in Visualization: {len(failed_edges_list_viz)}")
     
     if args.K_VALUE <= 8:
-        draw_fat_tree(graph_viz, args.K_VALUE, failed_edges_list_viz)
+        draw_fat_tree(graph_viz, args.K_VALUE, failed_edges_list_viz, visual_fail_rate)
     else:
         print("Skipping detailed structural visualization for K > 8 (too dense).")
 
@@ -317,12 +331,16 @@ def main():
     analysis_results = run_experiment_cycle(
         k=args.K_VALUE, 
         fail_rates=FAIL_RATES_TO_TEST, 
+        penalty=args.PENALTY,
         N_RUNS=args.N_RUNS,
         N_SAMPLES=args.N_SAMPLES
     )
     
-    # Attach K value to results for plot title
-    analysis_results['params'] = {'k': args.K_VALUE} 
+    # Attach metadata to results for plot display
+    analysis_results['params'] = {'k': args.K_VALUE}
+    analysis_results['n_runs'] = args.N_RUNS
+    analysis_results['n_samples'] = args.N_SAMPLES
+    analysis_results['penalty'] = args.PENALTY 
 
     # Print data summary (required for README.md table)
     print("\n--- Final Analysis Data (for README.md Table) ---")
