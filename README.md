@@ -5,7 +5,21 @@ The code implements a three-tier hierarchical structure (Core, Aggregation, Edge
 The following libraries must be installed:
 pip install networkx matplotlib numpy
 
-The command line interface (CLI) for running the analysis is handled by the Task1.py script using the argparse module. The CLI allows users to control the network's scale and the statistical rigor of the experiment. The general structure of the command is python Task1.py --K-VALUE <k> --N-RUNS <trials> --FAIL-RATE <pct>. The core statistical run, necessary for Section 5's analysis, uses the --K-VALUE parameter to define the network size and the --N-RUNS parameter to define the number of statistical trials used for averaging the data points
+
+The command-line interface (CLI) for running the analysis is handled by the task1.py script using the argparse module. The CLI allows users to control the network's scale, statistical rigor, failure conditions, and metric weighting. The general structure of the command is python [task1.py](http://_vscodecontentref_/2) --K-VALUE <k> --N-RUNS <trials> --N-SAMPLES <samples> --FAIL-RATE <pct> --PENALTY <penalty>.
+
+Parameter Descriptions:
+
+--K-VALUE defines the network size (k-ary Fat-Tree topology; must be even and ≥ 2). Larger K means more hosts/switches (K=8 supports 128 hosts).
+--N-RUNS specifies the number of independent statistical trials per failure rate; higher values reduce noise but increase runtime (default 100).
+--N-SAMPLES controls how many random host pairs are tested per trial (default 500); for K ≤ 4, all possible pairs are tested exhaustively.
+--FAIL-RATE is the link failure probability as a percentage (0.0–100.0); tests network robustness under stress (default 0.0).
+--PENALTY is the penalty in hops for disconnected host pairs; emphasizes the cost of isolation (default 10).
+Full Example:
+
+python task1.py --K-VALUE 8 --N-RUNS 100 --N-SAMPLES 500 --FAIL-RATE 15.0 --PENALTY 10
+
+This runs a production-grade analysis on a K=8 topology (128 hosts), performs 100 independent trials with 500 sampled host pairs per trial, tests failure rates from 0% to 15%, and applies a 10-hop penalty for disconnections. Expected runtime: 1–2 minutes.
 
 Experiment Parameters:Network Size (--K-VALUE 8): The Fat-Tree was built using $K=8$ switches (supporting 128 Hosts). This size was chosen because it is large enough to demonstrate the benefits of redundancy while remaining computationally feasible for extensive statistical analysis.Statistical Trials (--N-RUNS 100): For each failure rate tested (0% to 15%), 100 independent trials were run. This high number was chosen to minimize statistical noise and ensure that the resulting average reachability is accurate and reliable.Sample Size (--N-SAMPLES 500): In each trial, 500 random host pairs were sampled. This is sufficient to represent the entire network's performance, capturing both inter-pod and intra-pod traffic patterns.
 
